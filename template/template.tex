@@ -1,0 +1,138 @@
+\documentclass[a4paper]{book}
+\usepackage[many]{tcolorbox}
+\usepackage{xcolor}
+\usepackage{varwidth}
+\usepackage{environ}
+\usepackage{xparse}
+\usepackage[ngerman]{babel}
+\usepackage{ngerman}
+% \usepackage{ucs}
+\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[official]{eurosym}
+\usepackage{amsmath}
+\usepackage{multicol}
+\usepackage[left=2cm,right=2cm,top=2cm,bottom=2cm]{geometry}
+\usepackage{eso-pic,graphicx}
+\usepackage[pages=some]{background}
+\usepackage{hyperref}
+\usepackage{grffile}
+
+\pagenumbering{gobble}
+\setlength\columnsep{20pt}
+
+% \backgroundsetup{
+% scale=1,
+% color=black,
+% opacity=1.0,
+% angle=0,
+% contents={
+%   \includegraphics[width=\paperwidth,height=\paperheight]{bg.jpg}
+%   }
+% }
+
+\renewcommand\familydefault{\sfdefault}
+
+\newlength{\bubblesep}
+\newlength{\bubblewidth}
+\setlength{\bubblesep}{2pt}
+\AtBeginDocument{\setlength{\bubblewidth}{.375\textwidth}}
+\definecolor{bubblegreen}{RGB}{103,184,104}
+\definecolor{bubbleblue}{RGB}{65,159,217}
+\definecolor{bubblegray}{RGB}{241,240,240}
+\definecolor{datebg}{RGB}{76,145,191}
+
+\newcommand{\urlStyle}[1]{{\language\csname l@english\endcsname #1}}
+\newcommand{\hyph}{-\penalty0\hskip0pt\relax}
+\newcommand{\rmsgtime}[1]{\begin{flushright}\scriptsize#1\normalsize\end{flushright}}
+\newcommand{\lmsgtime}[1]{\begin{flushleft}\scriptsize #1\normalsize\end{flushleft}}
+
+
+\newcommand{\datebubble}[1]{%
+  \begin{center}
+    \tcbox[
+    on line,
+    arc=3.5mm,
+    colback=datebg,
+    colframe=datebg,
+    ]{\color{white}\scriptsize\begin{varwidth}{\bubblewidth}\textbf{#1}\end{varwidth}}
+  \end{center}
+}
+\newcommand{\bubble}[4]{%
+  \tcbox[
+    on line,
+    arc=1.5mm,
+    colback=#1,
+    colframe=#1,
+    #2,
+  ]{\color{#3}\begin{varwidth}{\bubblewidth}#4\end{varwidth}}%
+}
+
+\ExplSyntaxOn
+\seq_new:N \l__ooker_bubbles_seq
+\tl_new:N \l__ooker_bubbles_first_tl
+\tl_new:N \l__ooker_bubbles_last_tl
+
+\NewEnviron{rightbubbles}
+ {
+  \begin{flushright}
+  \sffamily
+  \seq_set_split:NnV \l__ooker_bubbles_seq { \par } \BODY
+  \int_compare:nTF { \seq_count:N \l__ooker_bubbles_seq < 2 }
+   {
+    \bubble{bubbleblue}{rounded~corners}{white}{\BODY}\par
+   }
+   {
+    \seq_pop_left:NN \l__ooker_bubbles_seq \l__ooker_bubbles_first_tl
+    \seq_pop_right:NN \l__ooker_bubbles_seq \l__ooker_bubbles_last_tl
+    \bubble{bubbleblue}{sharp~corners=southeast}{white}{\l__ooker_bubbles_first_tl}
+    \par\nointerlineskip
+    \addvspace{\bubblesep}
+    \seq_map_inline:Nn \l__ooker_bubbles_seq
+     {
+      \bubble{bubbleblue}{sharp~corners=east}{white}{##1}
+      \par\nointerlineskip
+      \addvspace{\bubblesep}
+     }
+    \bubble{bubbleblue}{sharp~corners=northeast}{white}{\l__ooker_bubbles_last_tl}
+    \par
+   }
+   \end{flushright}
+ }
+\NewEnviron{leftbubbles}
+ {
+  \begin{flushleft}
+  \sffamily
+  \seq_set_split:NnV \l__ooker_bubbles_seq { \par } \BODY
+  \int_compare:nTF { \seq_count:N \l__ooker_bubbles_seq < 2 }
+   {
+    \bubble{bubblegray}{rounded~corners}{black}{\BODY}\par
+   }
+   {
+    \seq_pop_left:NN \l__ooker_bubbles_seq \l__ooker_bubbles_first_tl
+    \seq_pop_right:NN \l__ooker_bubbles_seq \l__ooker_bubbles_last_tl
+    \bubble{bubblegray}{sharp~corners=southwest}{black}{\l__ooker_bubbles_first_tl}
+    \par\nointerlineskip
+    \addvspace{\bubblesep}
+    \seq_map_inline:Nn \l__ooker_bubbles_seq
+     {
+      \bubble{bubblegray}{sharp~corners=west}{black}{##1}
+      \par\nointerlineskip
+      \addvspace{\bubblesep}
+     }
+    \bubble{bubblegray}{sharp~corners=northwest}{black}{\l__ooker_bubbles_last_tl}\par
+   }
+  \end{flushleft}
+ }
+\ExplSyntaxOff
+
+\begin{document}
+\begin{sloppypar}
+%BACKGROUND_DECLARATION_PLACEHOLDER
+  \begin{multicols}{2}
+
+  %CHAT_DATA_PLACEHOLDER
+
+  \end{multicols}
+\end{sloppypar}
+\end{document}
