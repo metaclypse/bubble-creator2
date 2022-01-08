@@ -73,6 +73,52 @@ class BubbleCreator(object):
         seconds -= minutes * 60
         return str(minutes).zfill(2) + ':' + str(seconds).zfill(2)
 
+    def format_url(self, unbreakable_link):
+        # problem: Links are counted as long words in LaTeX
+        # solution: We add the \- command after every character, that allows a line break
+        breakable_link = ''
+        distance_to_backslash = 0  # if we find a backslash, we only insert \- a bit later again
+        for j in range(len(unbreakable_link)):
+            if j == 0:
+                breakable_link += unbreakable_link[j]
+            else:
+                if unbreakable_link[j] == '\\':
+                    breakable_link += unbreakable_link[j]
+                    distance_to_backslash = 4
+                else:
+                    if distance_to_backslash > 0:
+                        if unbreakable_link[j] == '-':
+                            breakable_link += '\hyph{}'
+                        else:
+                            breakable_link += unbreakable_link[j]
+                        distance_to_backslash -= 1
+                    else:
+                        if unbreakable_link[j] == '-':
+                            breakable_link += '\hyph{}'
+                        else:
+                            breakable_link += r'\-' + unbreakable_link[j]
+
+        return breakable_link
+
+    def format_voice_message(self, p_message):
+        curr_file = p_message.get('file', '')
+        message_tex_content = r'\includegraphics[width=.15\textwidth]{playbutton.pdf} '
+        if 'file' in p_message:
+            ogg_path = os.path.join(self.data_path, curr_file)
+            voice_graph_path = os.path.join(self.destination_path, 'voice_graphs')
+            if os.path.isfile(ogg_path):
+                if not os.path.isdir(voice_graph_path):
+                    os.mkdir(voice_graph_path)
+                fn = ogg_to_pdf(ogg_path, voice_graph_path)
+                rfn = 'voice_graphs' + os.path.pathsep + os.path.basename(fn)
+                message_tex_content += r'\includegraphics[width=.5\textwidth]{' + fn + r'} \\'
+        message_tex_content += 'Voice Message'
+        if 'duration_seconds' in p_message:
+            formatted_duration = self.format_seconds(int(p_message['duration_seconds']))
+            message_tex_content += ' (' + formatted_duration + ')'
+
+        return message_tex_content
+
     def prepare(self, message_data):
         # collect users from chat data
         global self_user_id
@@ -112,6 +158,79 @@ class BubbleCreator(object):
         print('Selected {} ({})'.format(user_names[choice], users[choice]))
         self_user_id = users[choice]
 
+    def process_message(self, p_message):
+        curr_from_id = p_message.get('from_id', '')
+        curr_forwareded_from = p_message.get('forwarded_from', '')
+        curr_date = str(p_message.get('date', 'yyyy-mm-ddThh:mm:ss'))[11:-3]
+        curr_text = p_message.get('text', 'Message text could not be retrieved.')
+        curr_photo = p_message.get('photo', '')
+        curr_file = p_message.get('file', '')
+        curr_media_type = p_message.get('media_type', '')
+
+        message_tex_content = ''
+
+        if curr_forwareded_from != '':
+            message_tex_content += r'\smallextra{Forwarded from ' \
+                                   + curr_forwareded_from \
+                                   + r'} \vspace{-.75\baselineskip}' \
+                                   + '\n'
+
+        # If a link or a call was sent, the text of the message is a list. If so, we check the contents:
+        if isinstance(curr_text, list) and curr_text:
+            for element in curr_text:
+                if isinstance(element, dict):
+                    message_type = element['type']
+                    if message_type == 'link':
+                        unbreakable_link = self.clean_string_for_tex(str(element['text']))
+                        breakable_link = self.format_url(unbreakable_link)
+                        message_tex_content += '\\begin{minipage}{\\textwidth}\\urlStyle{' + breakable_link + '}\\end{minipage}'
+                        # message_tex_content += '\\url{' + str(element['text']) + '}'
+                        # message_tex_content += r'\href{' + str(element['text']) + '}'
+                    else:
+                        message_tex_content += 'Unhandled message type: ' + message_type
+                else:
+                    message_tex_content += str(element)
+
+        elif isinstance(curr_text, dict) and curr_text:
+            ct_type = curr_text.get('type', '')
+            ct_text = curr_text.get('text', '')
+
+        elif curr_media_type == 'voice_message' and 'duration_seconds' in p_message:
+            message_tex_content += self.format_voice_message(p_message)
+
+        elif curr_media_type == 'sticker' and 'thumbnail' in p_message:
+            # Thumbnails are in WEBP format (despite the file ending). We have to convert to JPEG.
+            source_thumbnail_path = os.path.join(self.data_path, p_message.get('thumbnail'))
+            target_thumbnail_folder = os.path.join(self.destination_path, 'stickers')
+            target_thumbnail_path = os.path.join(target_thumbnail_folder,
+                                                 os.path.basename(source_thumbnail_path)[:-3] + 'png')
+
+            if not os.path.isdir(target_thumbnail_folder):
+                os.mkdir(target_thumbnail_folder)
+
+            logging.debug(dwebp(input_image='"' + source_thumbnail_path + '"',
+                                output_image='"' + target_thumbnail_path + '"',
+                                option="-o",
+                                logging="-v"))
+
+            message_tex_content = r'\includegraphics[width=.4\textwidth]{' + target_thumbnail_path + r'} '
+
+        else:
+            # process photo
+            if curr_photo != '':
+                photo_path = os.path.join(self.data_path, curr_photo)
+                message_tex_content = r'\includegraphics[width=.75\textwidth]{' + photo_path + '}\\\\ '
+            # process file
+            elif curr_file != '':
+                file_name = os.path.basename(os.path.join(self.data_path, curr_file))
+                file_name = self.clean_string_for_tex(file_name)
+                message_tex_content = r'\includegraphics[width=.15\textwidth]{file.pdf} \textbf{' + file_name + r'}'
+                if curr_text != '':
+                    message_tex_content += r'\\'
+            message_tex_content += self.clean_string_for_tex(str(curr_text))
+
+        return message_tex_content
+
     def convert(self, message_data, compile=False):
         print(self_user_id)
 
@@ -119,101 +238,13 @@ class BubbleCreator(object):
 
         # Go through all messages in the list:
         # for curr_message in message_data:
-        for i in tqdm.tqdm(range(len(message_data)), desc='Step 1 (Converting)', file=sys.stdout):
-            curr_message = message_data[i]
+        for j in tqdm.tqdm(range(len(message_data)), desc='Step 1 (Converting)', file=sys.stdout):
+            curr_message = message_data[j]
             # Each curr_message is a dict object.
             curr_from_id = curr_message.get('from_id', '')
             curr_date = str(curr_message.get('date', 'yyyy-mm-ddThh:mm:ss'))[11:-3]
-            curr_text = curr_message.get('text', 'Message text could not be retrieved.')
-            curr_photo = curr_message.get('photo', '')
-            curr_file = curr_message.get('file', '')
-            curr_media_type = curr_message.get('media_type', '')
 
-            # If a link was sent, the text of the message is a list. If so, we check the contents:
-            if isinstance(curr_text, list) and curr_text:
-                message_tex_content = ''
-                for element in curr_text:
-                    if isinstance(element, dict):
-                        message_type = element['type']
-                        if message_type == 'link':
-                            # problem: Links are counted as long words in LaTeX
-                            # solution: We add the \- command after every character, that allows a line break
-                            unbreakable_link = self.clean_string_for_tex(str(element['text']))
-                            breakable_link = ''
-                            distance_to_backslash = 0  # if we find a backslash, we only insert \- a bit later again
-                            for i in range(len(unbreakable_link)):
-                                if i == 0:
-                                    breakable_link += unbreakable_link[i]
-                                else:
-                                    if unbreakable_link[i] == '\\':
-                                        breakable_link += unbreakable_link[i]
-                                        distance_to_backslash = 4
-                                    else:
-                                        if distance_to_backslash > 0:
-                                            if unbreakable_link[i] == '-':
-                                                breakable_link += '\hyph{}'
-                                            else:
-                                                breakable_link += unbreakable_link[i]
-                                            distance_to_backslash -= 1
-                                        else:
-                                            if unbreakable_link[i] == '-':
-                                                breakable_link += '\hyph{}'
-                                            else:
-                                                breakable_link += r'\-' + unbreakable_link[i]
-
-                            message_tex_content += '\\begin{minipage}{\\textwidth}\\urlStyle{' + breakable_link + '}\\end{minipage}'
-                            # message_tex_content += '\\url{' + str(element['text']) + '}'
-                            # message_tex_content += r'\href{' + str(element['text']) + '}'
-                        else:
-                            message_tex_content += 'Unhandled message type: ' + message_type
-                    else:
-                        message_tex_content += str(element)
-            elif curr_media_type == 'voice_message' and 'duration_seconds' in curr_message:
-                message_tex_content = r'\includegraphics[width=.15\textwidth]{playbutton.pdf} '
-                if 'file' in curr_message:
-                    ogg_path = os.path.join(self.data_path, curr_file)
-                    voice_graph_path = os.path.join(self.destination_path, 'voice_graphs')
-                    if os.path.isfile(ogg_path):
-                        if not os.path.isdir(voice_graph_path):
-                            os.mkdir(voice_graph_path)
-                        fn = ogg_to_pdf(ogg_path, voice_graph_path)
-                        rfn = 'voice_graphs' + os.path.pathsep + os.path.basename(fn)
-                        message_tex_content += r'\includegraphics[width=.5\textwidth]{' + fn + r'} \\'
-                message_tex_content += 'Voice Message'
-                if 'duration_seconds' in curr_message:
-                    formatted_duration = self.format_seconds(int(curr_message['duration_seconds']))
-                    message_tex_content += ' (' + formatted_duration + ')'
-
-            elif curr_media_type == 'sticker' and 'thumbnail' in curr_message:
-                # Thumbnails are in WEBP format (despite the file ending). We have to convert to JPEG.
-                source_thumbnail_path = os.path.join(self.data_path, curr_message.get('thumbnail'))
-                target_thumbnail_folder = os.path.join(self.destination_path, 'stickers')
-                target_thumbnail_path = os.path.join(target_thumbnail_folder,
-                                                     os.path.basename(source_thumbnail_path)[:-3] + 'png')
-
-                if not os.path.isdir(target_thumbnail_folder):
-                    os.mkdir(target_thumbnail_folder)
-
-                logging.debug(dwebp(input_image='"' + source_thumbnail_path + '"',
-                                    output_image='"' + target_thumbnail_path + '"',
-                                    option="-o",
-                                    logging="-v"))
-
-                message_tex_content = r'\includegraphics[width=.4\textwidth]{' + target_thumbnail_path + r'} '
-            else:
-                message_tex_content = ''
-                # process photo
-                if curr_photo != '':
-                    photo_path = os.path.join(self.data_path, curr_photo)
-                    message_tex_content = r'\includegraphics[width=.75\textwidth]{' + photo_path + '}\\\\ '
-                # process file
-                elif curr_file != '':
-                    file_name = os.path.basename(os.path.join(self.data_path, curr_file))
-                    file_name = self.clean_string_for_tex(file_name)
-                    message_tex_content = r'\includegraphics[width=.15\textwidth]{file.pdf} \textbf{' + file_name + r'}'
-                    if curr_text != '':
-                        message_tex_content += r'\\'
-                message_tex_content += self.clean_string_for_tex(str(curr_text))
+            message_tex_content = self.process_message(curr_message)
 
             if curr_from_id == self_user_id:
                 date_command = '\\rmsgtime{' + str(curr_date) + '}'
@@ -241,15 +272,15 @@ class BubbleCreator(object):
 
         max_message_per_file = 1000
         final_strings = []
-        for i in range(int(len(structured_messages) / max_message_per_file) + 1):  # add 1 to be sure
+        for j in range(int(len(structured_messages) / max_message_per_file) + 1):  # add 1 to be sure
             final_strings.append(u'')
 
         curr_part = 0
         last_date = datetime.datetime(1900, 1, 1, 0, 0, 0)
 
         # for curr_message in structured_messages:
-        for i in tqdm.tqdm(range(len(structured_messages)), desc='Step 2 (Making bubbles)', file=sys.stdout):
-            curr_message = structured_messages[i]
+        for j in tqdm.tqdm(range(len(structured_messages)), desc='Step 2 (Making bubbles)', file=sys.stdout):
+            curr_message = structured_messages[j]
             d = curr_message['date']
             if last_date.date() != d.date():
                 final_strings[curr_part] += '\\datebubble{' + '{}.{}.{}'.format(d.day, d.month, d.year) + '}\n'
@@ -263,7 +294,6 @@ class BubbleCreator(object):
         with open('template/template.tex', 'r') as f:
             template = f.read()
 
-
         bg_decl_placeholder = '%BACKGROUND_DECLARATION_PLACEHOLDER'
         if self.bg_path is None:
             logging.debug('No background image set.')
@@ -274,16 +304,17 @@ class BubbleCreator(object):
 
         template_parts = template.split('%CHAT_DATA_PLACEHOLDER')
 
-        os.chdir(self.destination_path)
+        if compile:
+            os.chdir(self.destination_path)
 
         max_digits = len(str(len(final_strings)))
-        for i in tqdm.tqdm(range(len(final_strings)), desc='Step 3 (Saving LaTeX)', file=sys.stdout):
-            curr_file_name = 'test-out-' + str(i).zfill(max_digits) + '.tex'
+        for j in tqdm.tqdm(range(len(final_strings)), desc='Step 3 (Saving LaTeX)', file=sys.stdout):
+            curr_file_name = 'test-out-' + str(j).zfill(max_digits) + '.tex'
             dest = os.path.join(self.destination_path, curr_file_name)
 
-            logging.debug('Writing {}th file to {}'.format(i, dest))
+            logging.debug('Writing {}th file to {}'.format(j, dest))
             with open(dest, 'w') as f:
-                f.write(template_parts [0] + final_strings[i] + template_parts[1])
+                f.write(template_parts[0] + final_strings[j] + template_parts[1])
 
             # Compiling the LaTeX file via system command:
             if compile:
