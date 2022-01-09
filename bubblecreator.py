@@ -10,7 +10,7 @@ import logging
 import shutil
 import tqdm
 from webptools import dwebp
-from ampimage import ogg_to_pdf
+from media_extraction import ogg_to_pdf, thumbnail_from_video
 
 
 class BubbleCreator(object):
@@ -112,7 +112,7 @@ class BubbleCreator(object):
                 fn = ogg_to_pdf(ogg_path, voice_graph_path)
                 rfn = 'voice_graphs' + os.path.pathsep + os.path.basename(fn)
                 message_tex_content += r'\includegraphics[width=.5\textwidth]{' + fn + r'} \\'
-        message_tex_content += 'Voice Message'
+        message_tex_content += r'Voice Message'
         if 'duration_seconds' in p_message:
             formatted_duration = self.format_seconds(int(p_message['duration_seconds']))
             message_tex_content += ' (' + formatted_duration + ')'
@@ -160,7 +160,7 @@ class BubbleCreator(object):
 
     def process_message(self, p_message):
         curr_from_id = p_message.get('from_id', '')
-        curr_forwareded_from = p_message.get('forwarded_from', '')
+        curr_forwarded_from = p_message.get('forwarded_from', '')
         curr_date = str(p_message.get('date', 'yyyy-mm-ddThh:mm:ss'))[11:-3]
         curr_text = p_message.get('text', 'Message text could not be retrieved.')
         curr_photo = p_message.get('photo', '')
@@ -169,9 +169,9 @@ class BubbleCreator(object):
 
         message_tex_content = ''
 
-        if curr_forwareded_from != '':
+        if curr_forwarded_from != '':
             message_tex_content += r'\smallextra{Forwarded from ' \
-                                   + curr_forwareded_from \
+                                   + curr_forwarded_from \
                                    + r'} \vspace{-.75\baselineskip}' \
                                    + '\n'
 
@@ -198,6 +198,29 @@ class BubbleCreator(object):
         elif curr_media_type == 'voice_message' and 'duration_seconds' in p_message:
             message_tex_content += self.format_voice_message(p_message)
 
+        elif (curr_media_type == 'animation' or curr_media_type == 'video_file') \
+                and ('thumbnail' in p_message or 'file' in p_message):
+
+            if 'thumbnail' in p_message:
+                source_thumbnail_path = os.path.join(self.data_path, p_message.get('thumbnail'))
+                message_tex_content += r'\includegraphics[width=.5\textwidth]{' + source_thumbnail_path + r'} '
+            elif 'file' in p_message:
+                # If there is a file but not a thumbnail, we have to create the thumbnail ourselves.
+                target_thumbnail_folder = os.path.join(self.destination_path, 'thumbnails')
+                if not os.path.exists(target_thumbnail_folder):
+                    os.mkdir(target_thumbnail_folder)
+
+                source_file_path = os.path.join(self.data_path, curr_file)
+                target_thumbnail_path = os.path.join(target_thumbnail_folder,
+                                                     os.path.basename(source_file_path) + '.jpg')
+                thumbnail_from_video(source_file_path, target_thumbnail_path)
+
+                message_tex_content += r'\includegraphics[width=.5\textwidth]{' + target_thumbnail_path + r'} '
+
+            if 'duration_seconds' in p_message:
+                formatted_duration = self.format_seconds(int(p_message['duration_seconds']))
+                message_tex_content += r'\ \\ Video (' + formatted_duration + r')'
+
         elif curr_media_type == 'sticker' and 'thumbnail' in p_message:
             # Thumbnails are in WEBP format (despite the file ending). We have to convert to JPEG.
             source_thumbnail_path = os.path.join(self.data_path, p_message.get('thumbnail'))
@@ -213,18 +236,18 @@ class BubbleCreator(object):
                                 option="-o",
                                 logging="-v"))
 
-            message_tex_content = r'\includegraphics[width=.4\textwidth]{' + target_thumbnail_path + r'} '
+            message_tex_content += r'\includegraphics[width=.4\textwidth]{' + target_thumbnail_path + r'} '
 
         else:
             # process photo
             if curr_photo != '':
                 photo_path = os.path.join(self.data_path, curr_photo)
-                message_tex_content = r'\includegraphics[width=.75\textwidth]{' + photo_path + '}\\\\ '
+                message_tex_content += r'\includegraphics[width=.75\textwidth]{' + photo_path + '}\\\\ '
             # process file
             elif curr_file != '':
                 file_name = os.path.basename(os.path.join(self.data_path, curr_file))
                 file_name = self.clean_string_for_tex(file_name)
-                message_tex_content = r'\includegraphics[width=.15\textwidth]{file.pdf} \textbf{' + file_name + r'}'
+                message_tex_content += r'\includegraphics[width=.15\textwidth]{file.pdf} \textbf{' + file_name + r'}'
                 if curr_text != '':
                     message_tex_content += r'\\'
             message_tex_content += self.clean_string_for_tex(str(curr_text))
