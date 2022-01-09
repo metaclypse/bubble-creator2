@@ -231,10 +231,10 @@ class BubbleCreator(object):
 
         return message_tex_content
 
-    def convert(self, message_data, compile=False):
-        print(self_user_id)
+    def convert(self, message_data, compile_after_convert=False):
+        max_message_per_file = 1000
 
-        structured_messages = []
+        structured_messages = []  # Messages grouped by sender.
 
         # Go through all messages in the list:
         # for curr_message in message_data:
@@ -251,6 +251,8 @@ class BubbleCreator(object):
             else:
                 date_command = '\\lmsgtime{' + str(curr_date) + '}'
 
+            # The following code segment groups message contents together by sender. This makes it look prettier in the
+            # final file, since like this, the edges of the grouped messages 'point' towards the sender.
             if not structured_messages:
                 first_entry = {
                     'sender': curr_from_id,
@@ -270,7 +272,6 @@ class BubbleCreator(object):
                     }
                     structured_messages.append(new_entry)
 
-        max_message_per_file = 1000
         final_strings = []
         for j in range(int(len(structured_messages) / max_message_per_file) + 1):  # add 1 to be sure
             final_strings.append(u'')
@@ -287,9 +288,13 @@ class BubbleCreator(object):
                 last_date = curr_message['date']
 
             if curr_message['sender'] == self_user_id:
-                final_strings[curr_part] += u'\\begin{rightbubbles}\n' + curr_message['message'] + u'\n\\end{rightbubbles}\n'
+                final_strings[curr_part] += u'\\begin{rightbubbles}\n' \
+                                            + curr_message['message'] \
+                                            + u'\n\\end{rightbubbles}\n'
             else:
-                final_strings[curr_part] += u'\\begin{leftbubbles}\n' + curr_message['message'] + u'\n\\end{leftbubbles}\n'
+                final_strings[curr_part] += u'\\begin{leftbubbles}\n' \
+                                            + curr_message['message'] \
+                                            + u'\n\\end{leftbubbles}\n'
 
         with open('template/template.tex', 'r') as f:
             template = f.read()
@@ -302,9 +307,10 @@ class BubbleCreator(object):
             bg_declaration = r'\AddToShipoutPictureBG{\includegraphics[height=\paperheight]{' + self.bg_path + r'}}'
             template = template.replace(bg_decl_placeholder, bg_declaration)
 
-        template_parts = template.split('%CHAT_DATA_PLACEHOLDER')
+        chat_data_placeholder = '%CHAT_DATA_PLACEHOLDER'
+        template_parts = template.split(chat_data_placeholder)
 
-        if compile:
+        if compile_after_convert:
             os.chdir(self.destination_path)
 
         max_digits = len(str(len(final_strings)))
@@ -317,7 +323,7 @@ class BubbleCreator(object):
                 f.write(template_parts[0] + final_strings[j] + template_parts[1])
 
             # Compiling the LaTeX file via system command:
-            if compile:
+            if compile_after_convert:
                 os.system('pdflatex ' + dest)
 
     def run(self, compile=False):
@@ -362,17 +368,18 @@ class BubbleCreator(object):
         self.prepare(message_data)
 
         # step 2: generation
-        self.convert(message_data, compile=compile)
+        self.convert(message_data, compile_after_convert=compile)
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
     # program argument parsing
-    arg_parser = argparse.ArgumentParser(description='Generates (a) working LaTeX file(s) to make a nice document out of saved Telegram chats.')
+    arg_parser = argparse.ArgumentParser(description='Generates (a) working LaTeX file(s) to make a nice document out '
+                                                     'of saved Telegram chats.')
     arg_parser.add_argument("source", help="Path of the directory containing the exported chat data")
     arg_parser.add_argument("target", help="Target directory for the LaTeX files (will be created if not existing)")
-    arg_parser.add_argument("-a", help="Compile automatically after generation")
+    arg_parser.add_argument("-a", '--autocompile', action='store_true', help="Compile automatically after generation")
     args = arg_parser.parse_args()
 
     bc = BubbleCreator()
@@ -381,9 +388,5 @@ if __name__ == '__main__':
     bc.data_path = args.source
     bc.destination_path = args.target
     bc.bg_path = 'bg3.png'
-    if args.a is None:
-        compile_immediately = False
-    else:
-        compile_immediately = True
 
-    bc.run(compile=compile_immediately)
+    bc.run(compile=args.autocompile)
